@@ -1,0 +1,382 @@
+---
+output: html_document
+title: "GxE sub-types"
+---
+
+```{r setup, include=F}
+knitr::opts_chunk$set(echo=F, message=F,warning=F, 
+                      fig.path="../output/gxe_types_viz/")
+suppressMessages(silent <- lapply(
+  c("knitr", "kableExtra", "tidyverse", "patchwork", "cowplot"), 
+  library, character.only=T))
+theme_set(theme_bw())
+scale_color_discrete <- function(...) scale_color_brewer(..., palette="Set1")
+scale_fill_discrete <- function(...) scale_fill_brewer(..., palette="Set1")
+```
+
+# Background
+
+Gene-environment interactions (GxEs) are of increasing interest for improving genetic discovery, explaining missing heritability and population heterogeneity, and facilitating precision medicine. Their analysis is historically underpowered, but increasing sample sizes and associated computationally efficient software options are beginning to enable larger-scale discovery.
+
+Thomas and colleagues describe a series of possible definitions of GxE interactions, with different implications for relevant biological mechanisms, statistical detection, and clinical or public health impact (Thomas 2010). Statistical interactions describe any departure from the a model with pure main effects for genetic and environmental terms. Qualitative and quantitative interactions, in which stratified effects differ in direction or magnitude, respectively, are subsets of statistical interactions. "Public health synergy" refers to instances in which two exposures (possibly genetic) influence  disease risk in a way that is less than or greater than their impact alone. Finally, a biological interaction describes instances in which the effect of one factor depend on the presence *or absence* of another, at a biological or mechanistic level. 
+
+Often, investigators will conduct a GxE analysis based around estimating effects and associated significances for statistical interactions without specifying the underlying phenomenon being sought or clarifying alternative explanations for any observed significant GxEs. Here, we describe five patterns occurring at the biological level that can result in the appearance of a statistical interaction, in hopes that this framework will allow investigators to more clearly state hypotheses and think through alternative explanations for their findings.
+
+Notes: 
+
+* In this discussion, we will primarily focus on genotype as a modifier of exposure-outcome associations (though all concepts apply for the converse, i.e., exposure as a modifier of the G-Y relationship)
+* For simplicity, we will assume continuous outcomes unless otherwise noted.
+* For the purposes of this discussion, we will assume no confounders of the E-Y relationship - any of the patterns described below would also hold for a confounder of E-Y.
+
+# Phenomena leading to statistical interactions
+
+```{r phenomena}
+full_names <- c(
+  func="Functional", 
+  nlm="Nonlinear mediator", 
+  hv="Heterogeneous variability / vQTL", 
+  hm="Heterogeneous measurement", 
+  ge_nl="G-E correlation plus nonlinearity"
+)
+```
+
+```{r viz-prep}
+present_lm_fit <- function(df, form_str="y ~ g * e") {
+  lm(as.formula(form_str), data=df) %>%
+    broom::tidy() %>%
+    filter(term != "(Intercept)") %>%
+    select(term, estimate, p.value) %>%
+    mutate(across(c(estimate, p.value), ~round(., 3)))
+}
+
+set.seed(123)
+
+n_sim <- 10000
+sim_df <- tibble(.rows=n_sim)
+sim_df$g <- rbinom(n_sim, 2, 0.25)
+sim_df$g_fac <- factor(sim_df$g, labels=c("AA", "AB", "BB"))
+
+toy_diagrams <- list()
+sim_plots <- list()
+lm_fits <- list()
+```
+
+## Functional
+
+Pathway/biology-level relevance. Here, we might imagine that a genotype, functioning through the function or expression level of some enzyme, modifies the function of a pathway that mediates the E-Y relationship. 
+
+Most exposures used in GxE analysis, including human behaviors, environmental exposures, and physiological states (such as BMI and biological sex), ultimately impact health outcomes and biomarkers through intermediate / mediating molecular quantities. We can imagine the effect modification by genotype occurring either upstream of this mediating quantity ("mediated moderation") or downstream of it ("moderated mediation").
+
+* Preacher, Rucker, and Hayes, 2007.
+* Smoking, *ERCC2* and lung cancer: Zhou et al., 2002.
+    - Moderated mediation (smoking induces lung DNA damage [the mediator], which impacts lung cancer differentially based on DNA *ERCC2*-related DNA repair capacity)
+* Phenylketonuria example: Williams, Mamotte, and Burnett.
+    - Mediated moderation (*PAH* genotype and associated enzyme function modifies the relationship between dietary Phe and circulating Phe, and that circulating Phe leads to [mediates] the primarily cognitive symptoms)
+    
+* Note but not elaborate that there is substantial complexity in the biological pathways that mediate high-level exposrues (e.g., PA). That isn't the focus here but XYZ approaches can help us delineate these effects and how they act.
+
+```{r functional, fig.asp=0.5}
+sim_df <- sim_df %>%
+  mutate(
+    e = rnorm(n_sim, 5, 1),
+    y = rnorm(n_sim, e + g * e, 1)
+  )
+
+toy_diagrams$func <- sim_df %>%
+  ggplot(aes(x=e, y=y, color=g_fac, group=g_fac)) +
+  geom_smooth(method="lm", formula="y ~ x", se=FALSE) +
+  scale_color_discrete(name="G") +
+  labs(x="E", y="Y", tag="a")
+
+sim_plots$func <- toy_diagrams$func +
+  geom_point(alpha=0.2) +
+  labs(tag="b")
+
+lm_fits$func <- present_lm_fit(sim_df)
+
+toy_diagrams$func + sim_plots$func
+```
+
+## Nonlinear mediator
+
+In this case, both G and E impact the same pathway or mediator M, which itself has a nonlinear relationship with Y. This type of phenomenon may be clinically relevant or artifactual, depending on the hypothesis and relationship of the outcome to clinical decision-making thresholds. One of the most common examples of this nonlinearity is in binary outcomes dependent on sufficiency or toxicity thresholds for an underlying continuous factor.
+
+* Choline story (separate genetic and dietary contributions to choline status, with health effects determined by a roughly binary sufficiency threshold): Fischer et al., 2010. "Dietary choline requirements of women: effects of estrogen and genetic variation." *Am. J. Clin. Nutr.* 92(5):1113-9. https://doi.org/10.3945/ajcn.2010.30064
+
+Note: This inherent nonlinearity related to binary outcomes is fundamentally related to the distinction between additive and multiplicative interactions.
+
+* General additive vs. multiplicative and concept of additive interaction corresponding to more mechanistic forms of interaction: VanderWeele and Knol, 2014.
+
+```{r nonlinear-mediator, fig.asp=0.4}
+sim_df <- sim_df %>%
+  mutate(
+    e = rnorm(n_sim, 5, 1),
+    m = rnorm(n_sim, 2 * g + e, 0.25),
+    y = rnorm(n_sim, sqrt(m), 0.25)
+  )
+
+toy_diagrams$nlm1 <- sim_df %>%
+  ggplot(aes(x=e, y=m, color=g_fac, group=g_fac)) +
+  geom_smooth(method="lm", formula="y ~ x", se=FALSE) +
+  geom_hline(yintercept=5, linetype="solid") +
+  geom_hline(yintercept=7, linetype="dashed") +
+  geom_hline(yintercept=9, linetype="dotted") +
+  scale_color_discrete(name="G") +
+  labs(x="E", y="M", tag="a")
+toy_diagrams$nlm2 <- sim_df %>%
+  ggplot(aes(x=m, y=y)) +
+  geom_smooth(method="lm", formula="y~poly(x, 2)", se=FALSE) +
+  geom_vline(xintercept=5, linetype="solid") +
+  geom_vline(xintercept=7, linetype="dashed") +
+  geom_vline(xintercept=9, linetype="dotted") +
+  labs(x="M", y="Y")
+
+sim_plots$nlm <- sim_df %>%
+  ggplot(aes(x=e, y=y, color=g_fac, group=g_fac)) +
+  geom_point(alpha=0.2) +
+  geom_smooth(method="lm", formula="y ~ x", se=FALSE) +
+  scale_color_discrete(name="G") +
+  labs(x="E", y="Y", tag="b")
+
+lm_fits$nlm <- present_lm_fit(sim_df)
+
+toy_diagrams$nlm1 + toy_diagrams$nlm2 + sim_plots$nlm +
+  plot_layout(widths=c(1, 1, 2))
+```
+
+## Heterogeneous variability / vQTL
+
+Here, some G or E directly modifies the *variability*, rather than the mean, of Y while the other explains a consistent *proportion* of the variability in Y (described as a scaling model by Domingue and colleagues (Domingue 2021)). In such a case, 
+
+"True" variance-quantitative trait locus (vQTL) effects (genetic effects on variability that don't arise secondary to a specific gene-exposure interaction) are part of a family of non-specific interaction effects that may or may not be of scientific interest depending on the question at hand. For example, quantile-specific heritability is a phenomenon in which genetic effects on a phenotype differ depending on the location in that phenotype's distribution (Williams 2012, Williams 2020). Such effects will produce a "non-specific" GxE for any exposure having a substantial main effect on the outcome (and thus shifting the location of that phenotype within its distribution).
+
+```{r hv, fig.asp=0.5}
+sim_df <- sim_df %>%
+  mutate(
+    e = rnorm(n_sim, 5, 1),
+    y_star = rnorm(n_sim, scale(e), 1),  # Incorporates both noise and the E-informed percentile within that noise
+    y = rnorm(n_sim, g * y_star)  # Noise has already been incorporated into y_star
+  )
+
+toy_diagrams$hv1 <- sim_df %>%
+  ggplot(aes(x=g_fac, y=y, color=g_fac, group=g_fac)) +
+  geom_boxplot() +
+  guides(color="none") +
+  geom_segment(aes(x=0.75, xend=1.25, y=-0.4, yend=-0.4, linetype="dashed")) +
+  geom_segment(aes(x=0.75, xend=1.25, y=0.4, yend=0.4, linetype="dotted")) +
+  geom_segment(aes(x=1.75, xend=2.25, y=-0.8, yend=-0.8, linetype="dashed")) +
+  geom_segment(aes(x=1.75, xend=2.25, y=0.8, yend=0.8, linetype="dotted")) +
+  geom_segment(aes(x=2.75, xend=3.25, y=-1.5, yend=-1.5, linetype="dashed")) +
+  geom_segment(aes(x=2.75, xend=3.25, y=1.5, yend=1.5, linetype="dotted")) +
+  scale_linetype_identity(breaks=c("dashed", "dotted"), labels=c("E1", "E2"), 
+                          name="E", guide="legend") +
+  labs(x="G", y="Y", tag="a")
+toy_diagrams$hv2 <- sim_df %>%
+  ggplot(aes(x=e, y=y_star, color=g_fac, group=g_fac)) +
+  geom_smooth(method="lm", formula="y ~ x", se=FALSE) +
+  scale_color_discrete(name="G") +
+  labs(x="E", y="Y*")
+toy_diagrams$hv3 <- sim_df %>%
+  ggplot(aes(x=e, y=y, color=g_fac, group=g_fac)) +
+  geom_smooth(method="lm", formula="y ~ x", se=FALSE) +
+  scale_color_discrete(name="G") +
+  labs(x="E", y="Y")
+
+sim_plots$hv <- sim_df %>%
+  ggplot(aes(x=e, y=y, color=g_fac, group=g_fac)) +
+  geom_point(alpha=0.2) +
+  geom_smooth(method="lm", formula="y ~ x", se=FALSE) +
+  scale_color_discrete(name="G") +
+  labs(x="E", y="Y", tag="b")
+
+lm_fits$hv <- present_lm_fit(sim_df)
+
+toy_diagrams$hv1 + (toy_diagrams$hv2 / toy_diagrams$hv3) + sim_plots$hv +
+  plot_layout(widths=c(2, 2, 3))
+```
+
+## Heterogeneous measurement
+
+If G associates with the fidelity of measurement of E *or* Y, then any nonzero E-Y association will appear stronger in the higher-measurement-fidelity genotype, thus inducing a statistical GxE. For example, certain genotypes could lead to more accurate self-reporting of exposures (example?). As an example of G impacting outcome measurement, studies investigating vitamin D-binding protein (DBP) have clearly established that the chemistry of some immunoassays leads to bias in DBP measurement (Nielson 2016).
+
+This phenomenon could also occur in the reverse direction, i.e., with measurement heterogeneity related to E inducing a statistical GxE from a nonzero G-Y association.
+
+* Blood oxygen saturation and skin color confounding (race --> genotype --> poorer measurement)
+* Key note: genotype needs to change measurement *quality* rather than just biased up or down
+
+```{r measurement, fig.asp=0.5}
+sim_df <- sim_df %>%
+  mutate(
+    e = rnorm(n_sim, 5, 1),
+    e_m = rnorm(n_sim, e, 0.5 * exp(g)),
+    y = rnorm(n_sim, e, 1),
+    y_m = rnorm(n_sim, y, 0.5 * exp(g))
+  )
+
+icc_df <- sim_df %>%
+  group_by(g_fac) %>%
+  summarise(icc = var(e) / var(e_m))
+
+# toy_diagrams$hm1 <- sim_df %>%
+#   ggplot(aes(x=g_fac, y=e_m, color=g_fac)) +
+#   geom_boxplot() +
+#   guides(color=FALSE) + 
+#   labs(x="G", y="E (measured)", tag="a")
+toy_diagrams$hm1 <- icc_df %>%
+  ggplot(aes(x=g_fac, y=icc, fill=g_fac)) +
+  geom_bar(stat="identity") +
+  guides(fill="none") + 
+  labs(x="G", y="Exposure ICC (measurement accuracy)", tag="a")
+toy_diagrams$hm2 <- sim_df %>%
+  ggplot(aes(x=e, y=y, color=g_fac, group=g_fac)) +
+  geom_smooth(method="lm", formula="y ~ x", se=FALSE) +
+  scale_color_discrete(name="G") +
+  labs(x="E (true)", y="Y")
+toy_diagrams$hm3 <- sim_df %>%
+  ggplot(aes(x=e_m, y=y, color=g_fac, group=g_fac)) +
+  geom_smooth(method="lm", formula="y ~ x", se=FALSE) +
+  scale_color_discrete(name="G") +
+  labs(x="E (measured)", y="Y")
+
+sim_plots$hm <- sim_df %>%
+  ggplot(aes(x=e_m, y=y, color=g_fac, group=g_fac)) +
+  geom_point(alpha=0.2) +
+  geom_smooth(method="lm", formula="y ~ x", se=FALSE) +
+  scale_color_discrete(name="G") +
+  labs(x="E", y="Y", tag="b")
+
+lm_fits$hm <- present_lm_fit(sim_df, "y ~ g * e_m")
+
+toy_diagrams$hm1 + (toy_diagrams$hm2 / toy_diagrams$hm3) + sim_plots$hm +
+  plot_layout(widths=c(1, 1, 2))
+```
+
+## G-E correlation plus nonlinearity
+
+Finally, statistical interactions can appear when an exposure is (1) under genetic control (i.e., correlated with G) and (2) related nonlinearly with Y.
+
+This general phenomenon leads to the inflation often observed in genome-wide interaction studies when regression models are misspecified with respect to the E-Y relationship. In such a case, a nonlinear E-Y relationship combined with random and small G-E correlations genome-wide still leads to systematic departure of genome-wide p-values from the uniform null expected distribution (Voorman 2011).
+
+```{r ge-nonlinear, fig.asp=0.5}
+sim_df <- sim_df %>%
+  mutate(
+    e = rnorm(n_sim, 5 + g, 1),
+    y = rnorm(n_sim, sqrt(e), 0.1)
+  )
+
+seg_df <- tibble(
+  x = c(4, 8),
+  y = sqrt(x),
+  slope = 1 / 2 / y,
+  intercept = y - x * slope,
+  x_start = x - 2,
+  x_end = x + 2,
+  y_start = slope * x_start + intercept,
+  y_end = slope * x_end + intercept
+)
+
+toy_diagrams$ge_nl <- sim_df %>%
+  ggplot(aes(x=e, y=y)) +
+  geom_smooth(method="lm", formula="y ~ sqrt(x)", se=FALSE, color="black") +
+  geom_segment(aes(x=seg_df$x_start[1], xend=seg_df$x_end[1],
+                   y=seg_df$y_start[1], yend=seg_df$y_end[1]),
+               linetype="dashed", color=RColorBrewer::brewer.pal(3, "Set1")[1], size=1.5) +
+  geom_segment(aes(x=seg_df$x_start[2], xend=seg_df$x_end[2],
+                   y=seg_df$y_start[2], yend=seg_df$y_end[2]),
+               linetype="dashed", color=RColorBrewer::brewer.pal(3, "Set1")[3], size=1.5) +
+  scale_color_discrete(name="G") +
+  labs(x="E", y="Y", tag="a")
+
+sim_plots$ge_nl <- sim_df %>%
+  ggplot(aes(x=e, y=y, color=g_fac, group=g_fac)) +
+  geom_point(alpha=0.2) +
+  geom_smooth(method="lm", formula="y ~ x", se=FALSE) +
+  scale_color_discrete(name="G") +
+  labs(x="E", y="Y", tag="b")
+
+lm_fits$ge_nl <- present_lm_fit(sim_df)
+
+toy_diagrams$ge_nl + sim_plots$ge_nl
+```
+
+# Summary of simulations
+
+1. Simulate G with MAF=0.25: $G \sim binom(2, 0.25)$ ($N_{sims}$ = 10,000)
+2. Simulate E, M (where applicable), and Y as follows:
+
+| GxE Type | Exposure (E) | Mediator (M) | Outcome (Y) |
+| :---: | :---: | :---: | :---: |
+| Functional | $N(5, 1)$ |  | $N(E + G*E, 1)$ |
+| Nonlinear mediator | $N(5, 1)$ | $N(G + E, 0.25)$ | $N(\sqrt{M}, 0.25)$ |
+| vQTL | $N(5, 1)$ | | $Y^* \sim N(std(E), 1)$ <br /> $Y \sim N(G * Y^*, 1)$ |
+| Heterogeneous measurement | $N(5, 1)$ <br /> $E_m \sim N(E, 0.5 * e^G)$ | | $Y \sim N(E, 1)$ <br /> $Y_m \sim N(Y, 0.5 * e^G)$ |
+| G-E correlation with nonlinearity | $N(5 + 2*G, 1)$ | | $N(\sqrt{E}, 1)$ |
+
+3. Test for statistical interaction using the following regression model:
+$$
+Y \sim G + E + G*E
+$$
+
+```{r simulation-results}
+lm_fits %>%
+  bind_rows() %>%
+  kbl(caption="Regression results from simulations") %>%
+  kable_paper() %>%
+  column_spec(2, width="1cm") %>%
+  pack_rows(full_names[1], 1, 3) %>%
+  pack_rows(full_names[2], 4, 6) %>%
+  pack_rows(full_names[3], 7, 9) %>%
+  pack_rows(full_names[4], 10, 12) %>%
+  pack_rows(full_names[5], 13, 15)
+```
+
+# Questions and expansions
+
+* Appropriate scope for a review or "perspective"-type article?
+* More types/phenomena?
+* Other options for nonlinear transform (in diagrams/simulations) that accommodate negative exposure 
+* Tamar: In the conception of "GxEs don't really exist", does the "functional" category count as "real"?
+* Should the functional category simulations include a mediator that is explicitly incorporated via mediated moderation and/or moderated mediation? Or easier to leave it out?
+
+```{r simulations-old, eval=F}
+plot_gxe_sim <- function(g_vec, e_vec, y_vec) {
+  g_vec <- factor(g_vec)
+  qplot(x=e_vec, y=y_vec, color=g_vec, group=g_vec) +
+    geom_point() +
+    geom_smooth(method="lm", formula="y ~ x", se=FALSE) +
+    scale_color_discrete(name="G") +
+    labs(x="E", y="Y")
+}
+
+# Measurement heterogeneity
+e <- rnorm(n_sim, 0, 1)
+e_m <- rnorm(n_sim, e, exp(g))
+y <- rnorm(n_sim, e, 1)
+y_m <- rnorm(n_sim, y, exp(g))
+# ...test either e_m and y OR e and y_m
+
+sim_plots$mh <- plot_gxe_sim(g, e_m, y) + plot_gxe_sim(g, e, y_m)
+
+# G-E correlation with nonlinearity
+e <- rnorm(n_sim, g, 1)
+y <- rnorm(n_sim, sqrt(e), 1)
+
+sim_plots$ge_nl <- plot_gxe_sim(g, e, y)
+
+sim_plots
+```
+
+
+# References
+
+Types/definitions of GxEs: Thomas, 2010. “Gene-Environment-Wide Association Studies: Emerging Approaches”. Nat. Rev. Genet. https://doi.org/10.1038%2Fnrg2764
+Preacher, Rucker, and Hayes, 2007. “Addressing Moderated Mediation Hypotheses: Theory, Methods, and Prescriptions.” Multivar. Behav. Res. 42:185-227. https://doi-org/10.1080/00273170701341316
+Zhou et al., 2002. “Gene-Environment Interaction for the ERCC2 Polymorphisms and Cumulative Cigarette Smoking Exposure in Lung Cancer”. Cancer Res. https://aacrjournals.org/cancerres/article/62/5/1377/509646/Gene-Environment-Interaction-for-the-ERCC2
+Williams, Mamotte, and Burnett. “Phenylketonuria: An Inborn Error of Phenylalanine Metabolism”. Clin. Biochem. Rev. https://www.ncbi.nlm.nih.gov/pmc/articles/PMC2423317/
+Fischer et al., 2010. "Dietary choline requirements of women: effects of estrogen and genetic variation." *Am. J. Clin. Nutr.* 92(5):1113-9. https://doi.org/10.3945/ajcn.2010.30064
+VanderWeele and Knol, 2014. "A Tutorial on Interaction". *Epidemiol. Methods*. https://doi.org/10.1515/em-2013-0005
+Domingue et al. 2021. "Modeling Interaction and Dispersion Effect in the Analysis of Gene-by-Environment Interaction". *Behav. Genet.* 52:56-64. https://doi.org/10.1007/s10519-021-10090-8
+Williams, 2012. "Quantile-Specific Penetrance of Genes Affecting Lipoproteins, Adiposity and Height". *PLos One*. https://doi.org/10.1371/journal.pone.0028764
+Williams, 2020. "Gene-environment interactions due to quantile-specific heritability of triglyceride and VLDL concentrations". *Sci. Rep.*. https://doi.org/10.1038/s41598-020-60965-9
+Nielson CM, et al., 2016. "Free 25-Hydroxyvitamin D: Impact of Vitamin D Binding Protein Assays on Racial-Genotypic Associations." *J. Clin. Endocrinol. Metab.* 101(5):2226-2234. https://doi.org/10.1210/jc.2016-1104
+Voorman, Lumley, McKnight, and Rice, 2011. "Behavior of QQ-Plots and Genomic Control in Studies of Gene-Environment Interaction". *PLoS One*. https://doi.org/10.1371/journal.pone.0019416
