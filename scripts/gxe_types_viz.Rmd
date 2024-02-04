@@ -6,7 +6,7 @@ bibliography: ../doc/library.bib
 
 ```{r setup, include=F}
 knitr::opts_chunk$set(echo = F, message = F,warning = F, 
-                      fig.path = "../output/gxe_types_viz/")
+                      fig.path = "../output/gxe_types_viz/", dpi = 300)
 suppressMessages(silent <- lapply(
   c("knitr", "kableExtra", "tidyverse", "patchwork", "cowplot"), 
   library, character.only = TRUE))
@@ -59,7 +59,8 @@ func_sim_df <- base_sim_df %>%
     y = rnorm(n_sim, e + g * e, 1)
   )
 
-func_cartoon <- ggdraw() + draw_image("../output/functional_cartoon.png")
+func_cartoon <- ggdraw() + 
+  draw_image(magick::image_read_pdf("../output/functional_cartoon.pdf", density = 600))
 
 toy_diagrams$func <- func_sim_df %>%
   ggplot(aes(x = e, y = y, color = g_fac, group = g_fac)) +
@@ -75,7 +76,7 @@ sim_plots$func <- toy_diagrams$func +
 lm_fits$func <- present_lm_fit(func_sim_df)
 
 func_cartoon + toy_diagrams$func + sim_plots$func +
-  plot_layout(widths = c(3, 2, 2)) +
+  plot_layout(widths = c(2, 1, 1)) +
   plot_annotation(tag_levels = "a")
 ```
 
@@ -201,12 +202,18 @@ toy_diagrams$hv1 <- hv_sim_df %>%
 toy_diagrams$hv2 <- hv_sim_df %>%
   ggplot(aes(x = e, y = y_star, color = g_fac, group = g_fac)) +
   geom_smooth(method = "lm", formula = "y ~ x", se = FALSE, fullrange = TRUE) +
+  # scale_x_continuous(breaks = c(-0.5, 0.5), labels = c("E1", "E2")) +
+  geom_vline(xintercept = 3, linetype = "dotted") +
+  geom_vline(xintercept = 7, linetype = "dashed") +
   scale_color_discrete(name = "G") +
   labs(x = "E", y = "Y*") +
+  # theme(axis.ticks.x = element_line(color = "red", size = 2)) +
   guides(color = "none")
 toy_diagrams$hv3 <- hv_sim_df %>%
   ggplot(aes(x = e, y = y, color = g_fac, group = g_fac)) +
   geom_smooth(method = "lm", formula = "y ~ x", se = FALSE, fullrange = TRUE) +
+  geom_vline(xintercept = 3, linetype = "dotted") +
+  geom_vline(xintercept = 7, linetype = "dashed") +
   scale_color_discrete(name = "G") +
   labs(x = "E", y = "Y") +
   guides(color = "none")
@@ -286,14 +293,6 @@ present_lm_fit(hcm_sim_df %>% filter(g == 2), "y ~ e + z_m")
 present_lm_fit(hcm_sim_df, "y ~ g * e + g*z_m")
 
 lm_fits$hcm <- present_lm_fit(hcm_sim_df, "y ~ g * z_m")
-```
-
-```{r combined-figure, fig.asp=1.2, fig.width=10, include=F}
-toy_diagrams$func /
-  (toy_diagrams$nlm1 + toy_diagrams$nlm2) /
-  (toy_diagrams$hv1 + toy_diagrams$hv2 + toy_diagrams$hv3) /
-  (toy_diagrams$hm1 + toy_diagrams$hm2 + toy_diagrams$hm3) /
-  (toy_diagrams$rge_nl)
 ```
 
 # Appendix: Simulation setup
