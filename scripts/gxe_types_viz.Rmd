@@ -98,6 +98,7 @@ toy_diagrams$nlm1 <- nlm_sim_df %>%
   ggplot(aes(x = e, y = m, color = g_fac, group = g_fac)) +
   geom_smooth(method = "lm", formula = "y ~ x", se = FALSE, fullrange = TRUE) +
   labs(x = "E", y = "M") +
+  scale_color_discrete() +
   guides(color = "none")
 toy_diagrams$nlm2 <- nlm_sim_df %>%
   ggplot(aes(x = m, y = y)) +
