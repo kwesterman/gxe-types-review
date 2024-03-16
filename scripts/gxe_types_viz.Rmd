@@ -35,7 +35,8 @@ present_lm_fit <- function(df, form_str = "y ~ g * e") {
     broom::tidy() %>%
     filter(term != "(Intercept)") %>%
     select(term, estimate, p.value) %>%
-    mutate(across(c(estimate, p.value), ~round(., 3)))
+    mutate(across(c(estimate, p.value), ~round(., 3))) %>%
+    mutate(p.value = ifelse(p.value == 0, "<0.001", p.value))
 }
 
 set.seed(123)
@@ -77,7 +78,7 @@ lm_fits$func <- present_lm_fit(func_sim_df)
 
 func_cartoon + toy_diagrams$func + sim_plots$func +
   plot_layout(widths = c(2, 1, 1)) +
-  plot_annotation(tag_levels = "a")
+  plot_annotation(tag_levels = "A")
 ```
 
 ## Nonlinear mediator of genes and evironment
@@ -117,7 +118,7 @@ lm_fits$nlm <- present_lm_fit(nlm_sim_df)
 
 toy_diagrams$nlm1 + toy_diagrams$nlm2 + sim_plots$nlm +
   plot_layout(widths = c(1, 1, 2)) +
-  plot_annotation(tag_levels = "a")
+  plot_annotation(tag_levels = "A")
 ```
 
 ## G-E correlation plus nonlinearity
@@ -173,7 +174,7 @@ lm_fits$rge_nl <- present_lm_fit(rge_nl_sim_df)
 
 toy_diagrams$rge_nl1 + toy_diagrams$rge_nl2 + sim_plots$rge_nl +
   plot_layout(widths = c(2, 3, 3)) +
-  plot_annotation(tag_levels = "a")
+  plot_annotation(tag_levels = "A")
 ```
 
 ## Heterogeneous variability
@@ -189,13 +190,13 @@ hv_sim_df <- base_sim_df %>%
 toy_diagrams$hv1 <- hv_sim_df %>%
   ggplot(aes(x = g_fac, y = y, color = g_fac, group = g_fac)) +
   geom_boxplot() +
-  geom_segment(aes(x = 0.75, xend = 1.25, y = -0.4, yend = -0.4, linetype = "dashed")) +
-  geom_segment(aes(x = 0.75, xend = 1.25, y = 0.4, yend = 0.4, linetype = "dotted")) +
-  geom_segment(aes(x = 1.75, xend = 2.25, y = -0.8, yend = -0.8, linetype = "dashed")) +
-  geom_segment(aes(x = 1.75, xend = 2.25, y = 0.8, yend = 0.8, linetype = "dotted")) +
-  geom_segment(aes(x = 2.75, xend = 3.25, y = -1.5, yend = -1.5, linetype = "dashed")) +
-  geom_segment(aes(x = 2.75, xend = 3.25, y = 1.5, yend = 1.5, linetype = "dotted")) +
-  scale_linetype_identity(breaks = c("dashed", "dotted"), labels = c("E1", "E2"), 
+  geom_segment(aes(x = 0.75, xend = 1.25, y = -0.4, yend = -0.4, linetype = "dotted"), color = "black") +
+  geom_segment(aes(x = 0.75, xend = 1.25, y = 0.4, yend = 0.4, linetype = "dashed"), color = "black") +
+  geom_segment(aes(x = 1.75, xend = 2.25, y = -0.8, yend = -0.8, linetype = "dotted"), color = "black") +
+  geom_segment(aes(x = 1.75, xend = 2.25, y = 0.8, yend = 0.8, linetype = "dashed"), color = "black") +
+  geom_segment(aes(x = 2.75, xend = 3.25, y = -1.5, yend = -1.5, linetype = "dotted"), color = "black") +
+  geom_segment(aes(x = 2.75, xend = 3.25, y = 1.5, yend = 1.5, linetype = "dashed"), color = "black") +
+  scale_linetype_identity(breaks = c("dotted", "dashed"), labels = c("E1", "E2"), 
                           name = "E", guide = "legend") +
   scale_color_discrete() +
   guides(color = "none") +
@@ -230,7 +231,7 @@ lm_fits$hv <- present_lm_fit(hv_sim_df)
 
 toy_diagrams$hv1 + (toy_diagrams$hv2 / toy_diagrams$hv3) + sim_plots$hv +
   plot_layout(widths = c(3, 2, 3)) +
-  plot_annotation(tag_levels = "a")
+  plot_annotation(tag_levels = "A")
 ```
 
 ## Heterogeneous measurement
@@ -277,7 +278,7 @@ lm_fits$hm <- present_lm_fit(hm_sim_df, "y ~ g * e_m")
 
 toy_diagrams$hm1 + (toy_diagrams$hm2 / toy_diagrams$hm3) + sim_plots$hm +
   plot_layout(widths = c(2, 2, 3)) +
-  plot_annotation(tag_levels = "a")
+  plot_annotation(tag_levels = "A")
 ```
 
 ```{r heterogeneous-covariate-measurement}
